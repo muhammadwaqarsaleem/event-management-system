@@ -1,35 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
+import { registerUser, clearAuthError } from '../redux/authSlice';
 
 /**
  * Register Page Component
- * 
+ * -----------------------------------------------------------------------------
  * Demonstrates:
- * 1. Controlled Form Components in React using local state (`useState`).
- * 2. Robust Client-Side Validation:
- *    - Checks for empty/whitespace-only fields.
- *    - Validates email syntax using standard Regex pattern.
- *    - Enforces minimum password length (>= 6 characters).
- *    - Ensures Password and Confirm Password match.
- * 3. Dynamic error display:
- *    - Inline error messages beneath each invalid input field.
- *    - Red border highlighting on inputs failing validation.
- *    - Top alert banner for immediate feedback.
- * 4. Asynchronous form submission simulation:
- *    - Disables submit button during submission to prevent duplicate requests.
- *    - Displays success alert banner.
- * 5. Programmatic navigation using React Router v6 `useNavigate()` to route the user
- *    to the `/login` page upon successful registration.
+ * 1. Redux Integration with React:
+ *    - `useDispatch`: Hook providing the Redux dispatch function to send actions to the store.
+ *    - `useSelector`: Hook to extract pieces of state (`isAuthenticated`, `error`) from the Redux store.
+ * 2. Controlled Form Components in React using local state (`useState`).
+ * 3. Client-Side Validation:
+ *    - Checks empty/whitespace fields, email regex pattern, password length (>= 6),
+ *      and password confirmation equality before dispatching to Redux.
+ * 4. Error and Status Display:
+ *    - Displays client-side validation errors under input fields.
+ *    - Displays Redux-managed errors (e.g., "User already registered with this email")
+ *      in the top alert banner.
+ * 5. Automatic Redirection:
+ *    - `useEffect` monitors `isAuthenticated` from Redux. As soon as the user is
+ *      registered and logged in, they are redirected automatically to the home page (`/`).
  */
 function Register() {
-  // Hook provided by React Router v6 for programmatic redirection
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+
+  // Extract auth slice state from the Redux store
+  const { isAuthenticated, error: authError } = useSelector((state) => state.auth);
 
   // ---------------------------------------------------------------------------
   // 1. STATE DEFINITIONS
   // ---------------------------------------------------------------------------
 
-  // formData: Holds the controlled input values for each form field
+  // Local form input state
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -37,37 +41,57 @@ function Register() {
     confirmPassword: '',
   });
 
-  // errors: Stores inline validation error messages keyed by input name
+  // Client-side field-level validation errors
   const [errors, setErrors] = useState({});
 
-  // Form submission feedback states
+  // Local UI status flags
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [formAlert, setFormAlert] = useState('');
 
-  // Password visibility toggle states for better user experience
+  // Password visibility toggles
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // ---------------------------------------------------------------------------
-  // 2. INPUT CHANGE HANDLER
+  // 2. LIFECYCLE & REDIRECTION
   // ---------------------------------------------------------------------------
 
   /**
-   * Handles user typing into any input field.
-   * Uses computed property name `[name]: value` to update state dynamically.
-   * Also clears any existing error for that field to provide real-time responsive feedback.
+   * Automatically redirects user to Home ('/') if authenticated.
+   * Runs whenever `isAuthenticated` changes (e.g. following successful registration)
+   * or if the user navigates to /register while already logged in.
+   */
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
+
+  /**
+   * Cleanup effect: Clears any lingering Redux auth errors when component unmounts.
+   */
+  useEffect(() => {
+    return () => {
+      dispatch(clearAuthError());
+    };
+  }, [dispatch]);
+
+  // ---------------------------------------------------------------------------
+  // 3. INPUT CHANGE HANDLER
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Handles user input keystrokes.
+   * Updates local state, clears field-level validation errors, and clears Redux auth errors.
    */
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // Update form field value
     setFormData((prevData) => ({
       ...prevData,
       [name]: value,
     }));
 
-    // Clear individual error as the user types to improve usability
+    // Clear field-level error as user types
     if (errors[name]) {
       setErrors((prevErrors) => ({
         ...prevErrors,
@@ -75,31 +99,31 @@ function Register() {
       }));
     }
 
-    // Clear top form alert if any
-    if (formAlert) {
-      setFormAlert('');
+    // Clear Redux auth error if active
+    if (authError) {
+      dispatch(clearAuthError());
     }
   };
 
   // ---------------------------------------------------------------------------
-  // 3. FORM VALIDATION LOGIC
+  // 4. FORM VALIDATION
   // ---------------------------------------------------------------------------
 
   /**
-   * Validates all registration fields against assignment rules.
-   * Returns an object containing error messages for any invalid fields.
+   * Validates form inputs against assignment requirements.
+   * Returns an object mapping invalid field names to error messages.
    */
   const validateForm = () => {
     const newErrors = {};
 
-    // 1. Full Name Validation: Must not be empty and at least 2 characters
+    // 1. Full Name: Must not be empty and at least 2 characters
     if (!formData.name.trim()) {
       newErrors.name = 'Full name is required.';
     } else if (formData.name.trim().length < 2) {
       newErrors.name = 'Name must be at least 2 characters long.';
     }
 
-    // 2. Email Validation: Must not be empty and must match standard email pattern
+    // 2. Email: Must match standard email pattern
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!formData.email.trim()) {
       newErrors.email = 'Email address is required.';
@@ -107,14 +131,14 @@ function Register() {
       newErrors.email = 'Please enter a valid email address (e.g. user@example.com).';
     }
 
-    // 3. Password Validation: Must not be empty and must be >= 6 characters
+    // 3. Password: Must be at least 6 characters
     if (!formData.password) {
       newErrors.password = 'Password is required.';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters long.';
     }
 
-    // 4. Confirm Password Validation: Must not be empty and must match Password
+    // 4. Confirm Password: Must match password
     if (!formData.confirmPassword) {
       newErrors.confirmPassword = 'Please confirm your password.';
     } else if (formData.password !== formData.confirmPassword) {
@@ -125,49 +149,44 @@ function Register() {
   };
 
   // ---------------------------------------------------------------------------
-  // 4. FORM SUBMIT HANDLER
+  // 5. FORM SUBMISSION HANDLER
   // ---------------------------------------------------------------------------
 
   /**
-   * Handles form submission:
-   * - Prevents default page refresh (`e.preventDefault()`).
-   * - Performs validation.
-   * - If valid, simulates an API registration request with loading state and delay.
-   * - Displays a success notification and navigates to `/login`.
+   * Handles registration form submission:
+   * 1. Prevents default browser reload.
+   * 2. Runs local client validation.
+   * 3. Dispatches `registerUser` action to Redux store.
+   *    - If user exists: Redux sets state.error which displays in the alert banner.
+   *    - If valid: Redux updates state.users, sets state.currentUser, updates localStorage,
+   *      and sets state.isAuthenticated = true, triggering the useEffect redirect to '/'.
    */
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    // Reset feedback alerts
-    setFormAlert('');
-    setSuccessMessage('');
+    // Clear Redux errors prior to submission attempt
+    if (authError) {
+      dispatch(clearAuthError());
+    }
 
-    // Run client-side validation
     const validationErrors = validateForm();
-
-    // If there are errors, update state and halt submission
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
-      setFormAlert('Please fix the errors highlighted below.');
       return;
     }
 
-    // If validation passed, start simulated registration request
     setIsSubmitting(true);
 
-    // Simulate backend network latency (1.5 seconds)
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setSuccessMessage('Registration successful! Redirecting to login page...');
+    // Dispatch registerUser action to the Redux store
+    dispatch(
+      registerUser({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+      })
+    );
 
-      // Redirect user to the Login page after brief delay for visual feedback
-      setTimeout(() => {
-        navigate('/login', {
-          // Optionally pass registered email in route state to prefill login field
-          state: { registeredEmail: formData.email },
-        });
-      }, 1500);
-    }, 1200);
+    setIsSubmitting(false);
   };
 
   return (
@@ -182,19 +201,11 @@ function Register() {
           </p>
         </div>
 
-        {/* Global Error Alert Banner */}
-        {formAlert && (
+        {/* Redux Authentication Error Banner (e.g., email already exists) */}
+        {authError && (
           <div className="alert alert-error" role="alert">
             <span className="alert-icon">⚠️</span>
-            <span>{formAlert}</span>
-          </div>
-        )}
-
-        {/* Global Success Alert Banner */}
-        {successMessage && (
-          <div className="alert alert-success" role="status">
-            <span className="alert-icon">✅</span>
-            <span>{successMessage}</span>
+            <span>{authError}</span>
           </div>
         )}
 
@@ -238,7 +249,7 @@ function Register() {
                 placeholder="e.g. john@example.com"
                 value={formData.email}
                 onChange={handleChange}
-                className={`form-input ${errors.email ? 'has-error' : ''}`}
+                className={`form-input ${errors.email || authError ? 'has-error' : ''}`}
                 disabled={isSubmitting}
                 autoComplete="email"
               />
