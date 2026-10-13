@@ -1,27 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
+import { loginUser, clearAuthError } from '../redux/authSlice';
 
 /**
  * Login Page Component
- * 
+ * -----------------------------------------------------------------------------
  * Demonstrates:
- * 1. Controlled component state management using `useState`.
- * 2. Form input validation:
- *    - Required field checks.
- *    - Valid email formatting with Regex.
- *    - Minimum password length check (>= 6 characters).
- * 3. Handling route state from React Router (`useLocation().state`):
- *    - If user was redirected from the Register page, their email is automatically
- *      pre-filled for a seamless user experience.
- * 4. Inline error indicators and visual feedback.
- * 5. Simulated authentication request with a delay and redirect to `/` (Home).
+ * 1. Redux Integration:
+ *    - `useDispatch`: Dispatches `loginUser` and `clearAuthError` actions to the Redux store.
+ *    - `useSelector`: Selects `isAuthenticated` and `error` from Redux auth slice state.
+ * 2. Controlled Form Input handling with local `useState`.
+ * 3. Form Validation:
+ *    - Checks empty fields, email syntax, and minimum password length before dispatching.
+ * 4. Handling Redux Auth Errors:
+ *    - Displays "Invalid email or password" or other errors dispatched by the slice.
+ * 5. Automatic Redirection:
+ *    - `useEffect` monitors `isAuthenticated`. As soon as login succeeds, user is routed
+ *      to the home page (`/`).
  */
 function Login() {
-  // Navigation hooks from React Router v6
   const navigate = useNavigate();
   const location = useLocation();
+  const dispatch = useDispatch();
 
-  // If the user arrived here from Register.jsx, prefill their email
+  // Extract auth slice state from the Redux store
+  const { isAuthenticated, error: authError } = useSelector((state) => state.auth);
+
+  // If user navigated with state (e.g. from registration redirect), prefill email
   const initialEmail = location.state?.registeredEmail || '';
 
   // ---------------------------------------------------------------------------
@@ -34,28 +40,46 @@ function Login() {
     password: '',
   });
 
-  // Stores field-specific error messages
+  // Stores field-specific client validation error messages
   const [errors, setErrors] = useState({});
 
-  // Form submission and alert states
+  // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formAlert, setFormAlert] = useState('');
-  const [successMessage, setSuccessMessage] = useState(
-    location.state?.registeredEmail
-      ? 'Account created successfully! Please log in with your credentials.'
-      : ''
-  );
 
   // Password visibility toggle
   const [showPassword, setShowPassword] = useState(false);
 
   // ---------------------------------------------------------------------------
-  // 2. INPUT CHANGE HANDLER
+  // 2. LIFECYCLE & REDIRECTION
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Automatically redirects user to Home ('/') if authenticated.
+   * Runs whenever `isAuthenticated` changes (e.g. upon successful login)
+   * or if user enters /login while already logged in.
+   */
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/');
+    }
+  }, [isAuthenticated, navigate]);
+
+  /**
+   * Cleanup effect: Clears any lingering auth errors when component unmounts.
+   */
+  useEffect(() => {
+    return () => {
+      dispatch(clearAuthError());
+    };
+  }, [dispatch]);
+
+  // ---------------------------------------------------------------------------
+  // 3. INPUT CHANGE HANDLER
   // ---------------------------------------------------------------------------
 
   /**
    * Handles user keystrokes for input fields.
-   * Dynamically updates `formData` and removes field errors on edit.
+   * Dynamically updates `formData`, removes field errors, and clears Redux auth error.
    */
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -73,12 +97,14 @@ function Login() {
       }));
     }
 
-    // Clear top banners
-    if (formAlert) setFormAlert('');
+    // Clear Redux auth error if active
+    if (authError) {
+      dispatch(clearAuthError());
+    }
   };
 
   // ---------------------------------------------------------------------------
-  // 3. FORM VALIDATION LOGIC
+  // 4. FORM VALIDATION LOGIC
   // ---------------------------------------------------------------------------
 
   /**
@@ -107,43 +133,44 @@ function Login() {
   };
 
   // ---------------------------------------------------------------------------
-  // 4. FORM SUBMIT HANDLER
+  // 5. FORM SUBMIT HANDLER
   // ---------------------------------------------------------------------------
 
   /**
    * Handles login submission:
-   * - Validates form inputs.
-   * - Simulates an authentication handshake.
-   * - Directs the user to the homepage (`/`) upon success.
+   * 1. Prevents default form submission.
+   * 2. Clears previous errors.
+   * 3. Validates inputs locally.
+   * 4. Dispatches `loginUser` action to Redux store.
+   *    - If credentials match: Redux sets currentUser and isAuthenticated = true,
+   *      persisting to localStorage. The useEffect then redirects to '/'.
+   *    - If credentials fail: Redux sets state.error ("Invalid email or password"),
+   *      which is displayed in the alert banner.
    */
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    // Reset error banners
-    setFormAlert('');
+    if (authError) {
+      dispatch(clearAuthError());
+    }
 
-    // Execute validation
     const validationErrors = validateForm();
-
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
-      setFormAlert('Please fix the errors highlighted below.');
       return;
     }
 
-    // Start submission state
     setIsSubmitting(true);
 
-    // Simulate authentication API delay
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setSuccessMessage('Login successful! Redirecting to dashboard...');
+    // Dispatch login action to Redux auth slice
+    dispatch(
+      loginUser({
+        email: formData.email.trim(),
+        password: formData.password,
+      })
+    );
 
-      // Redirect to Home page after short delay
-      setTimeout(() => {
-        navigate('/');
-      }, 1200);
-    }, 1000);
+    setIsSubmitting(false);
   };
 
   return (
@@ -158,19 +185,11 @@ function Login() {
           </p>
         </div>
 
-        {/* Global Error Alert Banner */}
-        {formAlert && (
+        {/* Redux Authentication Error Banner (e.g. "Invalid email or password") */}
+        {authError && (
           <div className="alert alert-error" role="alert">
             <span className="alert-icon">⚠️</span>
-            <span>{formAlert}</span>
-          </div>
-        )}
-
-        {/* Global Success Alert Banner */}
-        {successMessage && (
-          <div className="alert alert-success" role="status">
-            <span className="alert-icon">✅</span>
-            <span>{successMessage}</span>
+            <span>{authError}</span>
           </div>
         )}
 
@@ -189,7 +208,7 @@ function Login() {
                 placeholder="e.g. john@example.com"
                 value={formData.email}
                 onChange={handleChange}
-                className={`form-input ${errors.email ? 'has-error' : ''}`}
+                className={`form-input ${errors.email || authError ? 'has-error' : ''}`}
                 disabled={isSubmitting}
                 autoComplete="email"
               />
@@ -214,7 +233,7 @@ function Login() {
                 placeholder="Enter your password"
                 value={formData.password}
                 onChange={handleChange}
-                className={`form-input ${errors.password ? 'has-error' : ''}`}
+                className={`form-input ${errors.password || authError ? 'has-error' : ''}`}
                 disabled={isSubmitting}
                 autoComplete="current-password"
               />
