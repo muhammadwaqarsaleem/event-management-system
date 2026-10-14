@@ -7,6 +7,7 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import EventDetails from './pages/EventDetails';
 
 // Import Styles
 import './App.css';
@@ -32,10 +33,11 @@ import './App.css';
  * 
  * 4. <Route path="..." element={<Component />} />:
  *    - Maps a specific path to a React component passed through the `element` prop.
- *    - `/` -> Renders Home landing page
+ *    - `/` -> Renders Home landing page with live events listing, category filter & pagination
+ *    - `/events/:id` -> Renders dedicated EventDetails page for the selected event ID
  *    - `/login` -> Renders Login page
  *    - `/register` -> Renders Registration page
- *    - `*` -> Wildcard catch-all route for unmatched paths (redirects to home or shows 404)
+ *    - `*` -> Wildcard catch-all route for unmatched paths (redirects to home)
  */
 function App() {
   return (
@@ -47,13 +49,16 @@ function App() {
         {/* Main Content Area where different route pages are mounted */}
         <main className="main-content">
           <Routes>
-            {/* Route 1: Home Landing Page */}
+            {/* Route 1: Home Landing Page & Events Listing */}
             <Route path="/" element={<Home />} />
 
-            {/* Route 2: Login Page */}
+            {/* Route 2: Dedicated Event Details Page (Step 5) */}
+            <Route path="/events/:id" element={<EventDetails />} />
+
+            {/* Route 3: Login Page */}
             <Route path="/login" element={<Login />} />
 
-            {/* Route 3: Register Page */}
+            {/* Route 4: Register Page */}
             <Route path="/register" element={<Register />} />
 
             {/* Fallback / 404 Catch-All Route: Redirect unknown routes back to Home */}

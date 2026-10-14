@@ -64,13 +64,15 @@ function EventCard({ event }) {
     <article className="event-card">
       {/* Top Media Section */}
       <div className="event-card-media">
-        <img
-          src={imageUrl}
-          alt={name}
-          className="event-card-img"
-          loading="lazy"
-          onError={handleImageError}
-        />
+        <Link to={`/events/${id}`} className="event-card-media-link" tabIndex={-1} aria-hidden="true">
+          <img
+            src={imageUrl}
+            alt={name}
+            className="event-card-img"
+            loading="lazy"
+            onError={handleImageError}
+          />
+        </Link>
 
         {/* Top-Left: Category Badge */}
         <span className="event-category-badge" title={fullCategoryString}>
@@ -89,7 +91,9 @@ function EventCard({ event }) {
       <div className="event-card-body">
         {/* Event Title */}
         <h3 className="event-card-title" title={name}>
-          {name}
+          <Link to={`/events/${id}`} className="event-title-link">
+            {name}
+          </Link>
         </h3>
 
         {/* Structured Metadata Rows */}
