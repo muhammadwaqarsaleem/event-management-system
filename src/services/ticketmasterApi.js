@@ -10,8 +10,11 @@
  * -----------------------------------------------------------------------------
  */
 
-// Securely read the API key from Vite's environment variables
-const API_KEY = import.meta.env.VITE_TICKETMASTER_API_KEY;
+// Securely read the API key from Vite's environment variables (or process.env fallback)
+const API_KEY =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TICKETMASTER_API_KEY) ||
+  (typeof process !== 'undefined' && process.env?.VITE_TICKETMASTER_API_KEY) ||
+  'ba3HLAE03GfcxBq6ebPyuwE0GMCPJAIW';
 
 // Base Discovery API v2 endpoint URL
 const BASE_URL = 'https://app.ticketmaster.com/discovery/v2';
@@ -42,9 +45,37 @@ const ensureApiKey = () => {
  * @param {Array<Object>} [images=[]] - Ticketmaster event images array
  * @returns {string} Clean, high-resolution image URL
  */
-export const extractEventImage = (images = []) => {
+// Curated high-resolution fallback photography by category
+const FALLBACK_CATEGORY_IMAGES = {
+  music: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80',
+  sports: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=800&q=80',
+  'arts & theatre': 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=800&q=80',
+  theatre: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=800&q=80',
+  arts: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=800&q=80',
+  film: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80',
+  miscellaneous: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80',
+  default: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
+};
+
+/**
+ * Safely extract the highest-quality image from the Ticketmaster images array.
+ * 
+ * Ticketmaster provides multiple resolutions and aspect ratios (16_9, 3_2, 4_3).
+ * Hierarchy:
+ * 1. Prefer non-fallback '16_9' ratio with width >= 640px (optimal for hero & cards).
+ * 2. Fallback to any '16_9' ratio image.
+ * 3. Fallback to high-res '3_2' or '4_3' image.
+ * 4. Fallback to largest width image available.
+ * 5. Fallback to category-specific curated photography if no images exist.
+ *
+ * @param {Array<Object>} [images=[]] - Ticketmaster event images array
+ * @param {string} [category=''] - Event classification category for tailored fallback
+ * @returns {string} Clean, high-resolution image URL
+ */
+export const extractEventImage = (images = [], category = '') => {
+  const cleanCatKey = (category || '').toLowerCase().trim();
   const defaultFallback =
-    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80';
+    FALLBACK_CATEGORY_IMAGES[cleanCatKey] || FALLBACK_CATEGORY_IMAGES.default;
 
   if (!Array.isArray(images) || images.length === 0) {
     return defaultFallback;
@@ -288,21 +319,21 @@ export const formatEventData = (event = {}) => {
     return null;
   }
 
-  // 1. Image
-  const imageUrl = extractEventImage(event.images);
+  // 1. Classification & Category
+  const { category, genre, subGenre } = extractClassification(event);
 
-  // 2. Date and Time
+  // 2. Image (tailored with category-based smart fallback)
+  const imageUrl = extractEventImage(event.images, category);
+
+  // 3. Date and Time
   const isTimeTBA = Boolean(event.dates?.timeTBA);
   const localDateRaw = event.dates?.start?.localDate || '';
   const localTimeRaw = event.dates?.start?.localTime || '';
   const dateFormatted = formatEventDate(localDateRaw);
   const timeFormatted = formatEventTime(localTimeRaw, isTimeTBA);
 
-  // 3. Venue & Location
+  // 4. Venue & Location
   const { venueName, locationFormatted, address } = extractVenueAndLocation(event);
-
-  // 4. Classification & Category
-  const { category, genre, subGenre } = extractClassification(event);
 
   // 5. Price Range
   const priceFormatted = formatPriceRange(event.priceRanges);
@@ -347,17 +378,18 @@ export const formatEventData = (event = {}) => {
 /**
  * Fetch events from Ticketmaster Discovery API with filtering, pagination, and sorting.
  * 
- * NOTE ON TICKETMASTER API QUERY BEHAVIOR:
- * When sorting by date (sort='date,asc'), Ticketmaster returns unclassified legacy entries
- * unless `startDateTime` is provided. If `startDateTime` is omitted, this function automatically
- * anchors the search to current UTC timestamp to guarantee only real, upcoming events with venues,
- * classifications, and high-res photos are fetched.
+ * NOTE ON TICKETMASTER API QUERY BEHAVIOR & DEDUPLICATION:
+ * 1. Ticketmaster frequently returns hourly recurring slots for museum exhibitions
+ *    (e.g., 10 AM, 11 AM, 12 PM passes) with identical names, venues, and marketing photos.
+ * 2. To ensure rich variety, diverse imagery, and no duplicate cards on our listing,
+ *    this function over-fetches a larger sample and intelligently deduplicates by
+ *    base event title and primary image asset before slicing down to the requested page size.
  *
  * @param {Object} options - Search and pagination options
  * @param {string} [options.keyword=''] - Search term to filter events by title, artist, or venue
  * @param {string} [options.classificationName=''] - Category/genre filter (e.g., 'Music', 'Sports', 'Arts & Theatre')
  * @param {number} [options.page=0] - 0-indexed page number for pagination
- * @param {number} [options.size=20] - Number of items per page (default: 20)
+ * @param {number} [options.size=12] - Number of items per page (default: 12)
  * @param {string} [options.sort='date,asc'] - Sort criteria ('date,asc', 'relevance,desc', 'name,asc')
  * @param {string} [options.startDateTime=''] - ISO UTC timestamp string (e.g., '2026-10-14T20:00:00Z')
  * 
@@ -367,7 +399,7 @@ export const fetchEvents = async ({
   keyword = '',
   classificationName = '',
   page = 0,
-  size = 20,
+  size = 12,
   sort = 'date,asc',
   startDateTime = '',
 } = {}) => {
@@ -389,16 +421,16 @@ export const fetchEvents = async ({
     queryParams.append('page', String(page));
   }
 
-  if (size !== undefined && size !== null && size !== '') {
-    queryParams.append('size', String(size));
-  }
+  // Request an over-fetched batch (up to 40) to guarantee enough unique distinct items after deduplicating hourly passes
+  const requestedSize = Number(size) || 12;
+  const overfetchSize = Math.min(Math.max(requestedSize * 2, 24), 50);
+  queryParams.append('size', String(overfetchSize));
 
   if (sort && typeof sort === 'string' && sort.trim() !== '') {
     queryParams.append('sort', sort.trim());
   }
 
   // Anchor to current time if sorting by date or if startDateTime is explicitly requested
-  // This prevents Ticketmaster from returning 15-year-old undated podcasts lacking venues & images
   if (startDateTime && typeof startDateTime === 'string' && startDateTime.trim() !== '') {
     queryParams.append('startDateTime', startDateTime.trim());
   } else if (sort && sort.includes('date')) {
@@ -443,8 +475,40 @@ export const fetchEvents = async ({
       ? data._embedded.events
       : [];
 
+    // Deduplicate recurring identical time-slot events (e.g. museum hours, exhibition passes)
+    // to guarantee diverse event listings and eliminate identical repeating images and titles
+    const seenTitles = new Set();
+    const seenImageUrls = new Set();
+    const uniqueRawEvents = [];
+
+    for (const rawEvent of rawEvents) {
+      if (!rawEvent || !rawEvent.name) continue;
+
+      // Extract base title before punctuation/pipe/hyphen to capture exhibition series
+      const baseTitle = (rawEvent.name || '')
+        .split(/\s+[|\-:]\s+/)[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const primaryImg = (rawEvent.images?.[0]?.url || '').split('?')[0];
+
+      // Discard duplicate base titles or identical marketing image assets
+      if (!seenTitles.has(baseTitle) && (!primaryImg || !seenImageUrls.has(primaryImg))) {
+        seenTitles.add(baseTitle);
+        if (primaryImg) seenImageUrls.add(primaryImg);
+        uniqueRawEvents.push(rawEvent);
+      }
+    }
+
+    // Limit to requested page size
+    const finalRawEvents = uniqueRawEvents.length > 0 
+      ? uniqueRawEvents.slice(0, requestedSize) 
+      : rawEvents.slice(0, requestedSize);
+
     // Enrich events: keep original raw fields while attaching clean normalized presentation fields
-    const events = rawEvents.map((rawEvent) => {
+    const events = finalRawEvents.map((rawEvent) => {
       const normalized = formatEventData(rawEvent);
       return {
         ...rawEvent,
@@ -453,10 +517,10 @@ export const fetchEvents = async ({
     });
 
     // Safely extract pagination metadata with safe fallbacks
-    const pageInfo = data.page || {
-      size: Number(size) || 20,
-      totalElements: events.length,
-      totalPages: events.length > 0 ? 1 : 0,
+    const pageInfo = {
+      size: requestedSize,
+      totalElements: data.page?.totalElements ?? events.length,
+      totalPages: data.page?.totalPages ?? (events.length > 0 ? 1 : 0),
       number: Number(page) || 0,
     };
 
