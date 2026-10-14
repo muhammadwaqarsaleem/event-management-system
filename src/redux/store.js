@@ -1,5 +1,6 @@
 import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './authSlice';
+import eventsReducer from './eventsSlice';
 
 /**
  * Redux Store Configuration
@@ -18,6 +19,14 @@ import authReducer from './authSlice';
  *     isAuthenticated: Boolean,
  *     error: String | null,
  *     users: Array<Object>
+ *   },
+ *   events: {
+ *     events: Array<Object>,
+ *     selectedEvent: Object | null,
+ *     loading: Boolean,
+ *     detailsLoading: Boolean,
+ *     error: String | null,
+ *     pageInfo: { size, totalElements, totalPages, number }
  *   }
  * }
  */
@@ -25,6 +34,8 @@ export const store = configureStore({
   reducer: {
     // Mount the authentication slice reducer under the 'auth' state key
     auth: authReducer,
+    // Mount the Ticketmaster events slice reducer under the 'events' state key
+    events: eventsReducer,
   },
 });
 
