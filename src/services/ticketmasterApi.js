@@ -13,7 +13,6 @@
 // Securely read the API key from Vite's environment variables (or process.env fallback)
 const API_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TICKETMASTER_API_KEY) ||
-  (typeof process !== 'undefined' && process.env?.VITE_TICKETMASTER_API_KEY) ||
   'ba3HLAE03GfcxBq6ebPyuwE0GMCPJAIW';
 
 // Base Discovery API v2 endpoint URL
@@ -387,6 +386,7 @@ export const formatEventData = (event = {}) => {
  *
  * @param {Object} options - Search and pagination options
  * @param {string} [options.keyword=''] - Search term to filter events by title, artist, or venue
+ * @param {string} [options.city=''] - Filter events by city name (e.g. 'New York', 'London')
  * @param {string} [options.classificationName=''] - Category/genre filter (e.g., 'Music', 'Sports', 'Arts & Theatre')
  * @param {number} [options.page=0] - 0-indexed page number for pagination
  * @param {number} [options.size=12] - Number of items per page (default: 12)
@@ -397,6 +397,7 @@ export const formatEventData = (event = {}) => {
  */
 export const fetchEvents = async ({
   keyword = '',
+  city = '',
   classificationName = '',
   page = 0,
   size = 12,
@@ -409,10 +410,17 @@ export const fetchEvents = async ({
   const queryParams = new URLSearchParams();
   queryParams.append('apikey', API_KEY);
 
+  // Safely append search keyword (trimmed, only if non-empty)
   if (keyword && typeof keyword === 'string' && keyword.trim() !== '') {
     queryParams.append('keyword', keyword.trim());
   }
 
+  // Safely append city filter (trimmed, only if non-empty)
+  if (city && typeof city === 'string' && city.trim() !== '') {
+    queryParams.append('city', city.trim());
+  }
+
+  // Ensure category classification remains fully compatible with search parameters
   if (classificationName && typeof classificationName === 'string' && classificationName.trim() !== '') {
     queryParams.append('classificationName', classificationName.trim());
   }
@@ -531,7 +539,8 @@ export const fetchEvents = async ({
   } catch (error) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       throw new Error(
-        'Network error: Unable to connect to Ticketmaster API. Please check your internet connection.'
+        'Network error: Unable to connect to Ticketmaster API. Please check your internet connection.',
+        { cause: error }
       );
     }
     throw error;
@@ -589,7 +598,8 @@ export const fetchEventById = async (eventId) => {
   } catch (error) {
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       throw new Error(
-        'Network error: Unable to connect to Ticketmaster API. Please check your internet connection.'
+        'Network error: Unable to connect to Ticketmaster API. Please check your internet connection.',
+        { cause: error }
       );
     }
     throw error;

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { getEventDetails, clearSelectedEvent } from '../redux/eventsSlice';
 import { extractEventImage } from '../services/ticketmasterApi';

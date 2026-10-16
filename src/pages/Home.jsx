@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { getEvents } from '../redux/eventsSlice';
 import EventCard from '../components/EventCard';
+import SearchBar from '../components/SearchBar';
 
 /**
  * =============================================================================
@@ -40,45 +41,56 @@ const PAGE_SIZE = 12;
 /**
  * Home Page Component
  * =============================================================================
- * Implements Step 5: "Add event listing" with live category filtering, sorting,
- * and Ticketmaster API pagination handling.
+ * Implements Step 5: "Add event listing" & Step 6: "Implement event search"
  *
- * Architecture & Implementation Highlights:
+ * Architectural & Multi-Filter Coordination Highlights:
  * -----------------------------------------------------------------------------
- * 1. Category Filtering Logic:
- *    - Renders interactive pill buttons for "All", "Music", "Sports",
- *      "Arts & Theatre", "Film", and "Miscellaneous".
- *    - Highlights the currently active category pill with an active CSS class.
- *    - Clicking a pill updates the active filter state, dispatches `getEvents` with
- *      the corresponding `classificationName`, and explicitly resets the page to 0.
+ * 1. Multi-Parameter Combination:
+ *    - Simultaneously combines search `keyword`, `city`, `classificationName` (category),
+ *      and `sort` option into a single unified query sent to Ticketmaster Discovery API.
+ *    - For instance, searching for "Rock" in "New York" under "Music" category properly
+ *      sends: `keyword=Rock&city=New+York&classificationName=Music&sort=date,asc`.
  *
- * 2. Sorting Dropdown:
- *    - Lets attendees sort events by "Date (Earliest First)", "Date (Latest First)",
- *      or "Name (A-Z)".
- *    - When changed, dispatches `getEvents` with the new sort parameter and resets page to 0.
+ * 2. URL State Synchronization (`useSearchParams`):
+ *    - Synchronizes active search criteria (`keyword`, `city`, `category`) with URL
+ *      query parameters (e.g. `/?keyword=Coldplay&city=London&category=Music`).
+ *    - Enables shareable links, browser back/forward navigation, and seamless state
+ *      preservation across page reloads.
  *
- * 3. Redux State Selectors (`useSelector`):
- *    - `events`: Array of normalized event objects returned from the Ticketmaster API.
- *    - `loading`: Tracks in-flight API requests to show skeletons and disable buttons.
- *    - `error`: Displays user-friendly error banners and rate-limit mitigation guidance.
- *    - `pageInfo`: Object containing { number, size, totalPages, totalElements }.
+ * 3. Pagination Reset Policy:
+ *    - Ticketmaster Discovery API pagination is 0-indexed.
+ *    - Whenever any search criterion changes (new keyword, city, or category),
+ *      pagination is explicitly reset to page 0 to avoid displaying empty pages
+ *      beyond the new query's result set.
  *
- * 4. Ticketmaster API Pagination Handling:
- *    - Ticketmaster Discovery API pagination is 0-indexed (`pageInfo.number` starts at 0).
- *    - Human-readable page display computes `currentPage = pageInfo.number + 1`.
- *    - "Previous" button is disabled on page 0 (`pageInfo.number === 0`).
- *    - "Next" button is disabled on the final page (`currentPage >= totalPages`).
- *    - Ticketmaster API caps deep queries at 1,000 items (page * size < 1000); this
- *      is gracefully guarded to prevent 400 Bad Request responses from the API.
+ * 4. Active Search Indicators & Chips:
+ *    - Renders dynamic filter chips displaying active keywords, cities, and categories.
+ *    - Allows attendees to dismiss individual filters with a single click or clear
+ *      all filters simultaneously.
+ *
+ * 5. Robust Empty State Handling:
+ *    - If no events are returned for the given filter combination, displays an
+ *      encouraging empty state with an actionable "Clear Filters" button that
+ *      resets keyword, city, and category back to defaults.
  * -----------------------------------------------------------------------------
  */
 function Home() {
   const dispatch = useDispatch();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // ---------------------------------------------------------------------------
-  // LOCAL COMPONENT STATE (Filters, Sorting & Pagination)
+  // URL QUERY PARAMETER INITIALIZATION
   // ---------------------------------------------------------------------------
-  const [activeCategory, setActiveCategory] = useState('');
+  const urlKeyword = searchParams.get('keyword') || '';
+  const urlCity = searchParams.get('city') || '';
+  const urlCategory = searchParams.get('category') || '';
+
+  // ---------------------------------------------------------------------------
+  // LOCAL COMPONENT STATE (Filters, Search, Sorting & Notifications)
+  // ---------------------------------------------------------------------------
+  const [searchKeyword, setSearchKeyword] = useState(urlKeyword);
+  const [searchCity, setSearchCity] = useState(urlCity);
+  const [activeCategory, setActiveCategory] = useState(urlCategory);
   const [sortOption, setSortOption] = useState('date,asc');
   const [refreshNotification, setRefreshNotification] = useState(false);
 
@@ -86,27 +98,13 @@ function Home() {
   // REDUX STORE SELECTORS
   // ---------------------------------------------------------------------------
   /**
-   * Access the centralized events slice state:
+   * Access centralized events slice state:
    * - events: array of normalized event objects
-   * - loading: boolean indicating active fetch
-   * - error: string error message if rejected
+   * - loading: boolean tracking in-flight API calls
+   * - error: error message string if rejected
    * - pageInfo: pagination metadata { size, totalElements, totalPages, number }
    */
   const { events, loading, error, pageInfo } = useSelector((state) => state.events);
-
-  // ---------------------------------------------------------------------------
-  // INITIAL DATA FETCH (Mount Phase)
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    dispatch(
-      getEvents({
-        classificationName: activeCategory,
-        sort: sortOption,
-        page: 0,
-        size: PAGE_SIZE,
-      })
-    );
-  }, [dispatch]); // Initial mount only
 
   // Helper function to smoothly scroll back up to the events feed section
   const scrollToEvents = () => {
@@ -116,78 +114,236 @@ function Home() {
     }
   };
 
+  /**
+   * Helper to sync active search and category state with browser URL search params.
+   * Keeps URLs clean by omitting empty string parameters.
+   */
+  const updateUrlParams = useCallback(
+    (keyword, city, category) => {
+      const nextParams = {};
+      if (keyword && keyword.trim()) nextParams.keyword = keyword.trim();
+      if (city && city.trim()) nextParams.city = city.trim();
+      if (category && category.trim()) nextParams.category = category.trim();
+
+      setSearchParams(nextParams, { replace: true });
+    },
+    [setSearchParams]
+  );
+
+  /**
+   * Centralized event fetch dispatcher:
+   * Combines keyword, city, category, sort, and page into a single Redux thunk call.
+   */
+  const executeEventFetch = useCallback(
+    ({
+      keyword = searchKeyword,
+      city = searchCity,
+      category = activeCategory,
+      sort = sortOption,
+      page = 0,
+      startDateTime = '',
+    } = {}) => {
+      dispatch(
+        getEvents({
+          keyword: keyword.trim(),
+          city: city.trim(),
+          classificationName: category.trim(),
+          sort,
+          page,
+          size: PAGE_SIZE,
+          ...(startDateTime ? { startDateTime } : {}),
+        })
+      );
+    },
+    [dispatch, searchKeyword, searchCity, activeCategory, sortOption]
+  );
+
+  // ---------------------------------------------------------------------------
+  // INITIAL DATA FETCH (Mount Phase)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    executeEventFetch({
+      keyword: urlKeyword,
+      city: urlCity,
+      category: urlCategory,
+      sort: sortOption,
+      page: 0,
+    });
+    // Run on initial mount only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // SEARCH HANDLERS
+  // ---------------------------------------------------------------------------
+  /**
+   * Handles search execution from SearchBar component:
+   * 1. Updates keyword and city states.
+   * 2. Synchronizes URL parameters.
+   * 3. Resets pagination to page 0.
+   * 4. Dispatches getEvents combining search inputs with current category & sort.
+   */
+  const handleSearch = ({ keyword, city }) => {
+    setSearchKeyword(keyword);
+    setSearchCity(city);
+    updateUrlParams(keyword, city, activeCategory);
+
+    executeEventFetch({
+      keyword,
+      city,
+      category: activeCategory,
+      sort: sortOption,
+      page: 0,
+    });
+
+    scrollToEvents();
+  };
+
+  /**
+   * Handles resetting search bar inputs while preserving active category filter.
+   */
+  const handleResetSearch = () => {
+    setSearchKeyword('');
+    setSearchCity('');
+    updateUrlParams('', '', activeCategory);
+
+    executeEventFetch({
+      keyword: '',
+      city: '',
+      category: activeCategory,
+      sort: sortOption,
+      page: 0,
+    });
+  };
+
   // ---------------------------------------------------------------------------
   // FILTERING & SORTING HANDLERS
   // ---------------------------------------------------------------------------
   /**
    * Handles category filter pill selection:
-   * 1. Updates `activeCategory` state.
-   * 2. Resets page index to 0.
-   * 3. Dispatches `getEvents` with updated `classificationName`.
+   * 1. Updates activeCategory state.
+   * 2. Synchronizes URL parameters.
+   * 3. Resets page index to 0.
+   * 4. Dispatches getEvents combining current search queries with the new category.
    */
   const handleCategoryChange = (categoryValue) => {
     if (activeCategory === categoryValue || loading) return;
 
     setActiveCategory(categoryValue);
-    dispatch(
-      getEvents({
-        classificationName: categoryValue,
-        sort: sortOption,
-        page: 0,
-        size: PAGE_SIZE,
-      })
-    );
+    updateUrlParams(searchKeyword, searchCity, categoryValue);
+
+    executeEventFetch({
+      keyword: searchKeyword,
+      city: searchCity,
+      category: categoryValue,
+      sort: sortOption,
+      page: 0,
+    });
+  };
+
+  /**
+   * Handles clearing all filters (keyword, city, category) at once.
+   * Used by Empty State "Clear Filters" button and Active Chips "Clear all" button.
+   */
+  const handleClearAllFilters = () => {
+    setSearchKeyword('');
+    setSearchCity('');
+    setActiveCategory('');
+    updateUrlParams('', '', '');
+
+    executeEventFetch({
+      keyword: '',
+      city: '',
+      category: '',
+      sort: sortOption,
+      page: 0,
+    });
+  };
+
+  /**
+   * Handles individual filter removals from active chips
+   */
+  const handleRemoveKeywordFilter = () => {
+    setSearchKeyword('');
+    updateUrlParams('', searchCity, activeCategory);
+    executeEventFetch({
+      keyword: '',
+      city: searchCity,
+      category: activeCategory,
+      sort: sortOption,
+      page: 0,
+    });
+  };
+
+  const handleRemoveCityFilter = () => {
+    setSearchCity('');
+    updateUrlParams(searchKeyword, '', activeCategory);
+    executeEventFetch({
+      keyword: searchKeyword,
+      city: '',
+      category: activeCategory,
+      sort: sortOption,
+      page: 0,
+    });
+  };
+
+  const handleRemoveCategoryFilter = () => {
+    setActiveCategory('');
+    updateUrlParams(searchKeyword, searchCity, '');
+    executeEventFetch({
+      keyword: searchKeyword,
+      city: searchCity,
+      category: '',
+      sort: sortOption,
+      page: 0,
+    });
   };
 
   /**
    * Handles sorting selection change:
-   * 1. Updates `sortOption` state.
+   * 1. Updates sortOption state.
    * 2. Resets page index to 0.
-   * 3. Dispatches `getEvents` with updated `sort` parameter.
+   * 3. Dispatches getEvents with updated sort parameter and existing filters.
    */
   const handleSortChange = (e) => {
     const newSort = e.target.value;
     setSortOption(newSort);
-    dispatch(
-      getEvents({
-        classificationName: activeCategory,
-        sort: newSort,
-        page: 0,
-        size: PAGE_SIZE,
-      })
-    );
+
+    executeEventFetch({
+      keyword: searchKeyword,
+      city: searchCity,
+      category: activeCategory,
+      sort: newSort,
+      page: 0,
+    });
   };
 
   /**
    * Handles refreshing the current view (retry / reload).
-   * Passes current UTC timestamp to guarantee the latest listings are re-evaluated
-   * and provides user confirmation toast.
    */
   const handleRefreshEvents = () => {
     const currentUtc = new Date().toISOString().split('.')[0] + 'Z';
-    dispatch(
-      getEvents({
-        classificationName: activeCategory,
-        sort: sortOption,
-        page: pageInfo?.number || 0,
-        size: PAGE_SIZE,
-        startDateTime: currentUtc,
-      })
-    ).then(() => {
-      setRefreshNotification(true);
-      setTimeout(() => setRefreshNotification(false), 2500);
+
+    executeEventFetch({
+      keyword: searchKeyword,
+      city: searchCity,
+      category: activeCategory,
+      sort: sortOption,
+      page: pageInfo?.number || 0,
+      startDateTime: currentUtc,
     });
+
+    setRefreshNotification(true);
+    setTimeout(() => setRefreshNotification(false), 2500);
   };
 
   // ---------------------------------------------------------------------------
   // TICKETMASTER API PAGINATION COMPUTATION & HANDLERS
   // ---------------------------------------------------------------------------
-  // Ticketmaster returns 0-indexed page number (0 is the first page)
   const currentPageIndex = pageInfo?.number ?? 0;
   const currentDisplayPage = currentPageIndex + 1;
 
   // Ticketmaster API enforces a max result constraint: page * size must be < 1,000.
-  // We compute safeTotalPages to prevent requesting pages beyond Ticketmaster's ceiling.
   const apiReportedTotalPages = pageInfo?.totalPages ?? 0;
   const maxSafePages = Math.floor(1000 / PAGE_SIZE); // ~83 pages for size 12
   const totalPages = Math.min(
@@ -201,43 +357,42 @@ function Home() {
     currentPageIndex >= totalPages - 1 ||
     currentPageIndex >= maxSafePages - 1;
 
-  /**
-   * Navigates to previous page:
-   * Dispatches `getEvents` with `page: currentPageIndex - 1`.
-   */
   const handlePreviousPage = () => {
     if (isFirstPage || loading) return;
     const prevPage = currentPageIndex - 1;
 
-    dispatch(
-      getEvents({
-        classificationName: activeCategory,
-        sort: sortOption,
-        page: prevPage,
-        size: PAGE_SIZE,
-      })
-    );
+    executeEventFetch({
+      keyword: searchKeyword,
+      city: searchCity,
+      category: activeCategory,
+      sort: sortOption,
+      page: prevPage,
+    });
     scrollToEvents();
   };
 
-  /**
-   * Navigates to next page:
-   * Dispatches `getEvents` with `page: currentPageIndex + 1`.
-   */
   const handleNextPage = () => {
     if (isLastPage || loading) return;
     const nextPage = currentPageIndex + 1;
 
-    dispatch(
-      getEvents({
-        classificationName: activeCategory,
-        sort: sortOption,
-        page: nextPage,
-        size: PAGE_SIZE,
-      })
-    );
+    executeEventFetch({
+      keyword: searchKeyword,
+      city: searchCity,
+      category: activeCategory,
+      sort: sortOption,
+      page: nextPage,
+    });
     scrollToEvents();
   };
+
+  // Check if any filters are actively applied
+  const hasActiveFilters = Boolean(
+    searchKeyword.trim() || searchCity.trim() || activeCategory.trim()
+  );
+
+  // Active category display label helper
+  const activeCategoryObj = CATEGORIES.find((cat) => cat.value === activeCategory);
+  const activeCategoryLabel = activeCategoryObj?.label || activeCategory;
 
   return (
     <div className="home-page">
@@ -329,6 +484,106 @@ function Home() {
           </div>
         </div>
 
+        {/* ================================================================= */}
+        {/* SEARCH BAR (Prominently Placed Above Categories & Event Grid)     */}
+        {/* ================================================================= */}
+        <SearchBar
+          initialKeyword={searchKeyword}
+          initialCity={searchCity}
+          onSearch={handleSearch}
+          onReset={handleResetSearch}
+          isLoading={loading}
+        />
+
+        {/* ================================================================= */}
+        {/* ACTIVE SEARCH INDICATORS & FILTER CHIPS                           */}
+        {/* ================================================================= */}
+        {hasActiveFilters && (
+          <div className="active-filters-container" aria-label="Active filters">
+            <span className="active-filters-title">
+              Active Filters:
+            </span>
+
+            <div className="active-filter-chips">
+              {/* Keyword Filter Chip */}
+              {searchKeyword.trim() && (
+                <span className="filter-chip">
+                  <span className="chip-icon" aria-hidden="true">🔍</span>
+                  <span className="chip-text">
+                    Keyword: <strong>"{searchKeyword}"</strong>
+                  </span>
+                  <button
+                    type="button"
+                    className="chip-remove-btn"
+                    onClick={handleRemoveKeywordFilter}
+                    aria-label={`Remove keyword filter: ${searchKeyword}`}
+                    title="Remove keyword filter"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+
+              {/* City Filter Chip */}
+              {searchCity.trim() && (
+                <span className="filter-chip">
+                  <span className="chip-icon" aria-hidden="true">📍</span>
+                  <span className="chip-text">
+                    City: <strong>"{searchCity}"</strong>
+                  </span>
+                  <button
+                    type="button"
+                    className="chip-remove-btn"
+                    onClick={handleRemoveCityFilter}
+                    aria-label={`Remove city filter: ${searchCity}`}
+                    title="Remove city filter"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+
+              {/* Category Filter Chip */}
+              {activeCategory.trim() && (
+                <span className="filter-chip">
+                  <span className="chip-icon" aria-hidden="true">🏷️</span>
+                  <span className="chip-text">
+                    Category: <strong>{activeCategoryLabel}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    className="chip-remove-btn"
+                    onClick={handleRemoveCategoryFilter}
+                    aria-label={`Remove category filter: ${activeCategoryLabel}`}
+                    title="Remove category filter"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+
+              {/* Clear All Filters Button */}
+              <button
+                type="button"
+                className="btn-clear-all-filters"
+                onClick={handleClearAllFilters}
+                aria-label="Clear all applied filters"
+              >
+                Clear all filters
+              </button>
+            </div>
+
+            {/* Contextual search result feedback */}
+            {!loading && events && (
+              <span className="active-filter-count">
+                {pageInfo?.totalElements > 0
+                  ? `${pageInfo.totalElements.toLocaleString()} results found`
+                  : 'Searching...'}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Category Filter Pills / Buttons */}
         <div
           className="category-filter-pills"
@@ -405,19 +660,29 @@ function Home() {
           </div>
         )}
 
-        {/* Empty State */}
+        {/* ================================================================= */}
+        {/* EMPTY STATE CONTAINER (Handled when events array is empty)        */}
+        {/* ================================================================= */}
         {!loading && !error && (!events || events.length === 0) && (
-          <div className="feed-empty-state">
-            <span className="empty-icon" aria-hidden="true">🔍</span>
-            <h3>No events found in this category</h3>
-            <p>Try switching to another category or reset to view all events.</p>
-            <button
-              type="button"
-              className="btn-cta-secondary"
-              onClick={() => handleCategoryChange('')}
-            >
-              View All Events
-            </button>
+          <div className="feed-empty-state" role="status">
+            <div className="empty-icon-bubble">
+              <span className="empty-icon" aria-hidden="true">🔍</span>
+            </div>
+            <h3 className="empty-state-title">No events found matching your criteria</h3>
+            <p className="empty-state-desc">
+              {hasActiveFilters
+                ? "We couldn't find any events matching your active keyword, city, or category filters. Try refining your terms or resetting filters to see all available events."
+                : "There are currently no events scheduled under this selection. Please check back later or explore other categories."}
+            </p>
+            <div className="empty-state-actions">
+              <button
+                type="button"
+                className="btn-clear-filters-primary"
+                onClick={handleClearAllFilters}
+              >
+                Clear Filters
+              </button>
+            </div>
           </div>
         )}
 
