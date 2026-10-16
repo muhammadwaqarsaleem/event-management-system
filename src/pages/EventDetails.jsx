@@ -2,6 +2,11 @@ import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { getEventDetails, clearSelectedEvent } from '../redux/eventsSlice';
+import {
+  registerEvent,
+  cancelEventRegistration,
+  clearRegistrationMessage,
+} from '../redux/registrationsSlice';
 import { extractEventImage } from '../services/ticketmasterApi';
 
 /**
@@ -22,45 +27,28 @@ import { extractEventImage } from '../services/ticketmasterApi';
  *      via `navigate(-1)` or explicitly to `'/'`.
  *
  * 3. Redux State Selectors (`useSelector`):
- *    - Subscribes to `state.events` in the central Redux store.
- *    - Reads:
- *      * `selectedEvent`: Detailed event object populated by `getEventDetails`.
- *      * `detailsLoading`: Boolean indicating in-flight network request.
- *      * `error`: Error message string if API request fails or event is not found.
+ *    - Subscribes to `state.events` for event details and loading states.
+ *    - Subscribes to `state.auth` for user authentication session status.
+ *    - Subscribes to `state.registrations` for persisted event registrations
+ *      and feedback messages.
  *
  * 4. Redux Action Dispatching (`useDispatch`):
  *    - Dispatches `getEventDetails(id)` on component mount to fetch single event details.
- *    - Dispatches `clearSelectedEvent()` on component unmount (cleanup phase) to prevent
- *      stale data from flashing on subsequent event visits.
+ *    - Dispatches `clearSelectedEvent()` and `clearRegistrationMessage()` on unmount.
+ *    - Dispatches `registerEvent` and `cancelEventRegistration` based on user actions.
  *
- * 5. Layout & Information Display (as mandated by assignment requirements):
- *    - Prominent high-resolution banner image.
- *    - Event Title and Category badge (Segment + Genre).
- *    - Date, time, and timezone.
- *    - Venue name, full address (street, city, state, postal code, country).
- *    - Ticket Status badge (e.g., "On Sale", "Cancelled", "Rescheduled").
- *    - Price range (min - max currency) or "Check official website for pricing".
- *    - "Back to Events" button navigating back.
- *    - Placeholder "Register for Event" button (styled & ready for Commit 7).
- *    - Loading spinner and error handling state.
+ * 5. Dynamic Registration Controls:
+ *    - If unauthenticated: redirects to `/login` with friendly prompt.
+ *    - If authenticated & not registered: displays primary "Register for Event" button.
+ *    - If authenticated & registered: displays green confirmation badge and
+ *      "Cancel Registration" action.
  * =============================================================================
  */
 function EventDetails() {
   // ---------------------------------------------------------------------------
   // 1. REACT ROUTER HOOKS
   // ---------------------------------------------------------------------------
-  /**
-   * `useParams`:
-   * Accesses URL parameters declared in Route definitions (e.g., path="/events/:id").
-   * Here, `id` corresponds to the unique Ticketmaster event identifier.
-   */
   const { id } = useParams();
-
-  /**
-   * `useNavigate`:
-   * Provides a navigate function to programmatically route the user without
-   * requiring an explicit <Link> component (e.g., for back buttons or after form submit).
-   */
   const navigate = useNavigate();
 
   // ---------------------------------------------------------------------------
@@ -68,43 +56,112 @@ function EventDetails() {
   // ---------------------------------------------------------------------------
   const dispatch = useDispatch();
 
-  /**
-   * `useSelector`:
-   * Selects specific slices of state from the global Redux store.
-   * `detailsLoading` tracks loading state specific to single-event fetching.
-   * `selectedEvent` holds the normalized Ticketmaster event payload.
-   * `error` captures any error returned by `getEventDetails.rejected`.
-   */
+  // Events slice: Selected event data and loading states
   const { selectedEvent, detailsLoading, error } = useSelector(
     (state) => state.events
   );
 
+  // Auth slice: Current logged-in user credentials and auth status
+  const { currentUser, isAuthenticated } = useSelector(
+    (state) => state.auth
+  );
+
+  // Registrations slice: Registered events array and feedback messages
+  const { registrations, message: registrationMessage } = useSelector(
+    (state) => state.registrations
+  );
+
+  // Target event ID derived safely from selectedEvent or URL param
+  const currentEventId = selectedEvent?.id || id;
+
+  /**
+   * Determine whether the currently authenticated user has registered
+   * for this specific event by matching both userEmail and eventId.
+   */
+  const isRegistered = Boolean(
+    currentUser &&
+    Array.isArray(registrations) &&
+    registrations.some(
+      (reg) => reg.userEmail === currentUser.email && reg.eventId === currentEventId
+    )
+  );
+
   // ---------------------------------------------------------------------------
-  // 3. LIFECYCLE & DATA FETCHING WITH CLEANUP
+  // 3. LIFECYCLE & AUTO-DISMISS FEEDBACK NOTIFICATIONS
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    // When the component mounts or when the URL `id` changes, dispatch async thunk
+    // When the component mounts or URL `id` changes, fetch fresh details
     if (id) {
       dispatch(getEventDetails(id));
     }
 
     // Cleanup phase: Unmount handler
-    // Clearing `selectedEvent` ensures that if the user opens another event later,
-    // they don't see brief remnants of the previous event while the new one loads.
     return () => {
       dispatch(clearSelectedEvent());
+      dispatch(clearRegistrationMessage());
     };
   }, [dispatch, id]);
 
+  /**
+   * Auto-dismiss the registration notification toast after 3 seconds
+   */
+  useEffect(() => {
+    if (registrationMessage) {
+      const timer = setTimeout(() => {
+        dispatch(clearRegistrationMessage());
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [registrationMessage, dispatch]);
+
+  // ---------------------------------------------------------------------------
+  // 4. ACTION HANDLERS
+  // ---------------------------------------------------------------------------
   // Handler to safely navigate back
   const handleBack = () => {
-    // Navigate back to listing, or fallback to home
     if (window.history.length > 2) {
       navigate(-1);
     } else {
       navigate('/');
     }
   };
+
+  /**
+   * Handles user click on "Register for Event":
+   * 1. Checks if user is authenticated; if not, alerts and redirects to /login.
+   * 2. If authenticated, dispatches `registerEvent` with userEmail and selectedEvent.
+   */
+  const handleRegister = () => {
+    if (!isAuthenticated || !currentUser) {
+      alert('Please log in to register for events.');
+      navigate('/login', { state: { from: `/events/${id}` } });
+      return;
+    }
+
+    if (selectedEvent) {
+      dispatch(
+        registerEvent({
+          userEmail: currentUser.email,
+          event: selectedEvent,
+        })
+      );
+    }
+  };
+
+  /**
+   * Handles user click on "Cancel Registration":
+   * Dispatches `cancelEventRegistration` matching userEmail and eventId.
+   */
+  const handleCancelRegistration = () => {
+    if (!currentUser || !currentEventId) return;
+    dispatch(
+      cancelEventRegistration({
+        userEmail: currentUser.email,
+        eventId: currentEventId,
+      })
+    );
+  };
+
 
   // Safe image error fallback
   const handleImageError = (e) => {
@@ -244,6 +301,40 @@ function EventDetails() {
           <span className="details-breadcrumb-current">{name}</span>
         </nav>
 
+        {/* Feedback Notification / Toast Banner */}
+        {registrationMessage && (
+          <aside
+            className={`registration-toast-banner ${
+              registrationMessage.toLowerCase().includes('cancel')
+                ? 'toast-cancelled'
+                : registrationMessage.toLowerCase().includes('already')
+                ? 'toast-warning'
+                : 'toast-success'
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="toast-content">
+              <span className="toast-icon" aria-hidden="true">
+                {registrationMessage.toLowerCase().includes('cancel')
+                  ? '🗑️'
+                  : registrationMessage.toLowerCase().includes('already')
+                  ? '⚠️'
+                  : '🎉'}
+              </span>
+              <span className="toast-text">{registrationMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => dispatch(clearRegistrationMessage())}
+              className="btn-toast-close"
+              aria-label="Dismiss notification"
+            >
+              ✕
+            </button>
+          </aside>
+        )}
+
         {/* Main Details Article Card */}
         <article className="details-main-card">
           {/* Prominent Banner Media Section */}
@@ -368,16 +459,35 @@ function EventDetails() {
                   ← Back to Events
                 </button>
 
-                {/* Primary Requirement: Placeholder "Register for Event" button */}
-                {/* Styled and ready for Commit 7 integration */}
-                <button
-                  type="button"
-                  className="btn-action-register"
-                  title="Event registration feature is scheduled for Commit 7"
-                  disabled
-                >
-                  🎟️ Register for Event <span className="badge-coming-soon">Commit 7</span>
-                </button>
+                {/* Dynamic Event Registration Actions */}
+                {isRegistered ? (
+                  <div className="registration-status-group">
+                    <span className="badge-registered" aria-label="Registration confirmed">
+                      ✓ You are Registered
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCancelRegistration}
+                      className="btn-action-cancel"
+                      title="Cancel your registration for this event"
+                    >
+                      ✕ Cancel Registration
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleRegister}
+                    className="btn-action-register"
+                    title={
+                      isAuthenticated
+                        ? 'Register for this event'
+                        : 'Please log in to register for events'
+                    }
+                  >
+                    🎟️ Register for Event
+                  </button>
+                )}
 
                 {/* External Official Ticketmaster Link */}
                 {ticketmasterUrl && (
