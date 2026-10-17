@@ -25,8 +25,36 @@ function Navbar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  // Extract auth state from the Redux store
+  // Extract auth and registration slice states from the Redux store
   const { isAuthenticated, currentUser } = useSelector((state) => state.auth);
+  const { registrations = [] } = useSelector((state) => state.registrations);
+
+  /**
+   * Calculates the user's active upcoming event registrations:
+   * 1. Filters registrations belonging to the authenticated user's email.
+   * 2. Parses event date to local midnight and checks if it is >= today.
+   */
+  const todayMidnight = new Date().setHours(0, 0, 0, 0);
+  const normalizedUserEmail = currentUser?.email?.trim().toLowerCase();
+
+  const upcomingCount =
+    isAuthenticated && normalizedUserEmail
+      ? registrations.filter((reg) => {
+          if (!reg.userEmail || reg.userEmail.trim().toLowerCase() !== normalizedUserEmail) {
+            return false;
+          }
+          if (!reg.eventDate || reg.eventDate === 'TBA') return true;
+          const ymdMatch = /^\d{4}-\d{2}-\d{2}$/.test(reg.eventDate);
+          if (ymdMatch) {
+            const [year, month, day] = reg.eventDate.split('-').map(Number);
+            return new Date(year, month - 1, day).setHours(0, 0, 0, 0) >= todayMidnight;
+          }
+          const parsed = new Date(reg.eventDate);
+          return !isNaN(parsed.getTime())
+            ? new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()).setHours(0, 0, 0, 0) >= todayMidnight
+            : true;
+        }).length
+      : 0;
 
   /**
    * Handles user logout:
@@ -71,11 +99,36 @@ function Navbar() {
             {isAuthenticated ? (
               // ---------------------------------------------------------------
               // AUTHENTICATED STATE:
+              // - Show "My Events" link with upcoming active registration badge count
               // - Show personalized greeting: "Hi, [Name]"
               // - Show Logout action button
               // - Hide Login and Register links
               // ---------------------------------------------------------------
               <>
+                <li>
+                  <NavLink
+                    to="/my-events"
+                    className={({ isActive }) =>
+                      isActive
+                        ? 'nav-link nav-link-my-events active'
+                        : 'nav-link nav-link-my-events'
+                    }
+                  >
+                    <span>My Events</span>
+                    {upcomingCount > 0 && (
+                      <span
+                        className="navbar-badge-count"
+                        title={`${upcomingCount} upcoming registered ${
+                          upcomingCount === 1 ? 'event' : 'events'
+                        }`}
+                        aria-label={`${upcomingCount} upcoming registrations`}
+                      >
+                        {upcomingCount}
+                      </span>
+                    )}
+                  </NavLink>
+                </li>
+
                 <li className="navbar-user">
                   <span className="navbar-greeting">
                     👋 Hi, <span className="navbar-user-name">{currentUser?.name || 'User'}</span>
