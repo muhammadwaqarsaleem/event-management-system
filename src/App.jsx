@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 // Import Layout Components
 import Navbar from './components/Navbar';
+import ProtectedRoute from './components/ProtectedRoute';
 
 // Import Page Components
 import Home from './pages/Home';
@@ -16,7 +17,7 @@ import './App.css';
 /**
  * App Component - Root Application Entry with React Router v6
  * 
- * Routing Setup Explained:
+ * Routing Setup & Security Architecture:
  * -----------------------------------------------------------------------------
  * 1. <BrowserRouter>:
  *    - Wraps the entire application to enable HTML5 History API routing (clean URLs
@@ -27,18 +28,19 @@ import './App.css';
  *    - Placed inside <BrowserRouter> but outside <Routes> so that it persists
  *      across every page transition.
  * 
- * 3. <Routes>:
- *    - Replaces the older v5 <Switch>.
- *    - Looks through all children <Route> elements and renders the best-matching
- *      route based on relative path ranking.
- * 
- * 4. <Route path="..." element={<Component />} />:
- *    - Maps a specific path to a React component passed through the `element` prop.
+ * 3. Public Routes:
  *    - `/` -> Renders Home landing page with live events listing, category filter & pagination
  *    - `/events/:id` -> Renders dedicated EventDetails page for the selected event ID
- *    - `/my-events` -> Renders My Events page with categorized active/past registrations (Step 8)
  *    - `/login` -> Renders Login page
  *    - `/register` -> Renders Registration page
+ * 
+ * 4. Protected Routes (Step 9):
+ *    - `/my-events` -> Wrapped inside <ProtectedRoute>. Only accessible if the user
+ *      is logged in (auth.isAuthenticated === true).
+ *    - Unauthorized visitors are automatically redirected to `/login` with location state
+ *      preserved so they return back to `/my-events` immediately after signing in.
+ * 
+ * 5. Catch-All Route:
  *    - `*` -> Wildcard catch-all route for unmatched paths (redirects to home)
  */
 function App() {
@@ -51,19 +53,26 @@ function App() {
         {/* Main Content Area where different route pages are mounted */}
         <main className="main-content">
           <Routes>
-            {/* Route 1: Home Landing Page & Events Listing */}
+            {/* Route 1: Home Landing Page & Events Listing (Public) */}
             <Route path="/" element={<Home />} />
 
-            {/* Route 2: Dedicated Event Details Page (Step 5) */}
+            {/* Route 2: Dedicated Event Details Page (Public - Step 5) */}
             <Route path="/events/:id" element={<EventDetails />} />
 
-            {/* Route 3: My Events Page (Step 8) */}
-            <Route path="/my-events" element={<MyEvents />} />
+            {/* Route 3: My Events Page (Protected - Step 9) */}
+            <Route
+              path="/my-events"
+              element={
+                <ProtectedRoute>
+                  <MyEvents />
+                </ProtectedRoute>
+              }
+            />
 
-            {/* Route 4: Login Page */}
+            {/* Route 4: Login Page (Public) */}
             <Route path="/login" element={<Login />} />
 
-            {/* Route 5: Register Page */}
+            {/* Route 5: Register Page (Public) */}
             <Route path="/register" element={<Register />} />
 
             {/* Fallback / 404 Catch-All Route: Redirect unknown routes back to Home */}

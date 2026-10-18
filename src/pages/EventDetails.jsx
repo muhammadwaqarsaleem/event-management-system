@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { getEventDetails, clearSelectedEvent } from '../redux/eventsSlice';
 import {
@@ -7,7 +7,7 @@ import {
   cancelEventRegistration,
   clearRegistrationMessage,
 } from '../redux/registrationsSlice';
-import { extractEventImage } from '../services/ticketmasterApi';
+import { getEventImage, DEFAULT_EVENT_PLACEHOLDER } from '../utils/imageHelper';
 
 /**
  * EventDetails Component
@@ -21,24 +21,22 @@ import { extractEventImage } from '../services/ticketmasterApi';
  *    - Defined in App.jsx as `/events/:id`.
  *    - Calling `useParams()` provides `{ id }`, matching Ticketmaster's unique event ID.
  *
- * 2. React Router `useNavigate()`:
- *    - Imperative navigation hook for programmatic redirects.
- *    - Used by the "Back to Events" button to smoothly return to the previous view
- *      via `navigate(-1)` or explicitly to `'/'`.
+ * 2. React Router `useNavigate()` & `useLocation()`:
+ *    - Imperative navigation hooks for programmatic redirects and breadcrumb handling.
+ *    - Preserves current location in state when redirecting unauthenticated users to `/login`.
  *
- * 3. Redux State Selectors (`useSelector`):
+ * 3. Centralized Deterministic Image Helper (`getEventImage`):
+ *    - Ensures the banner displayed here is identical to the one rendered on the
+ *      home event card and the persisted registration card in MyEvents.
+ *
+ * 4. Redux State Selectors (`useSelector`):
  *    - Subscribes to `state.events` for event details and loading states.
  *    - Subscribes to `state.auth` for user authentication session status.
  *    - Subscribes to `state.registrations` for persisted event registrations
  *      and feedback messages.
  *
- * 4. Redux Action Dispatching (`useDispatch`):
- *    - Dispatches `getEventDetails(id)` on component mount to fetch single event details.
- *    - Dispatches `clearSelectedEvent()` and `clearRegistrationMessage()` on unmount.
- *    - Dispatches `registerEvent` and `cancelEventRegistration` based on user actions.
- *
  * 5. Dynamic Registration Controls:
- *    - If unauthenticated: redirects to `/login` with friendly prompt.
+ *    - If unauthenticated: redirects to `/login` with friendly prompt & location state.
  *    - If authenticated & not registered: displays primary "Register for Event" button.
  *    - If authenticated & registered: displays green confirmation badge and
  *      "Cancel Registration" action.
@@ -50,6 +48,7 @@ function EventDetails() {
   // ---------------------------------------------------------------------------
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // ---------------------------------------------------------------------------
   // 2. REDUX DISPATCH & STATE SELECTORS
@@ -128,13 +127,14 @@ function EventDetails() {
 
   /**
    * Handles user click on "Register for Event":
-   * 1. Checks if user is authenticated; if not, alerts and redirects to /login.
+   * 1. Checks if user is authenticated; if not, alerts and redirects to /login
+   *    with current location state so login can return back.
    * 2. If authenticated, dispatches `registerEvent` with userEmail and selectedEvent.
    */
   const handleRegister = () => {
     if (!isAuthenticated || !currentUser) {
       alert('Please log in to register for events.');
-      navigate('/login', { state: { from: `/events/${id}` } });
+      navigate('/login', { state: { from: location } });
       return;
     }
 
@@ -162,16 +162,14 @@ function EventDetails() {
     );
   };
 
-
-  // Safe image error fallback
+  // Safe image error fallback using centralized SVG placeholder
   const handleImageError = (e) => {
     e.target.onerror = null;
-    e.target.src =
-      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80';
+    e.target.src = DEFAULT_EVENT_PLACEHOLDER;
   };
 
   // ---------------------------------------------------------------------------
-  // 4. LOADING STATE
+  // 5. LOADING STATE
   // ---------------------------------------------------------------------------
   if (detailsLoading) {
     return (
@@ -190,7 +188,7 @@ function EventDetails() {
   }
 
   // ---------------------------------------------------------------------------
-  // 5. ERROR STATE (Event Not Found / API Failure)
+  // 6. ERROR STATE (Event Not Found / API Failure)
   // ---------------------------------------------------------------------------
   if (error || !selectedEvent) {
     return (
@@ -225,12 +223,10 @@ function EventDetails() {
   }
 
   // ---------------------------------------------------------------------------
-  // 6. SAFE EXTRACTION & NORMALIZATION OF EVENT METADATA
+  // 7. SAFE EXTRACTION & NORMALIZATION OF EVENT METADATA
   // ---------------------------------------------------------------------------
   const {
     name = 'Untitled Event',
-    images = [],
-    imageUrl,
     dateFormatted,
     timeFormatted,
     category = 'General',
@@ -245,8 +241,8 @@ function EventDetails() {
     dates = {},
   } = selectedEvent;
 
-  // Banner Image: prefer extracted high-res image, fallback to general banner
-  const bannerImage = imageUrl || extractEventImage(images);
+  // Deterministic Banner Image: Use centralized getEventImage helper
+  const bannerImage = getEventImage(selectedEvent);
 
   // Timezone information
   const timezone = dates?.timezone || 'Local Time';
@@ -282,7 +278,7 @@ function EventDetails() {
   const statusTypeClass = `status-${status.type || 'neutral'}`;
 
   // ---------------------------------------------------------------------------
-  // 7. RENDER COMPLETE EVENT DETAILS VIEW
+  // 8. RENDER COMPLETE EVENT DETAILS VIEW
   // ---------------------------------------------------------------------------
   return (
     <div className="event-details-page">

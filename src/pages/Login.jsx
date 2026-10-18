@@ -15,9 +15,10 @@ import { loginUser, clearAuthError } from '../redux/authSlice';
  *    - Checks empty fields, email syntax, and minimum password length before dispatching.
  * 4. Handling Redux Auth Errors:
  *    - Displays "Invalid email or password" or other errors dispatched by the slice.
- * 5. Automatic Redirection:
- *    - `useEffect` monitors `isAuthenticated`. As soon as login succeeds, user is routed
- *      to the home page (`/`).
+ * 5. Dynamic Redirection Flow (Step 9):
+ *    - Reads `location.state?.from` passed by `ProtectedRoute` or event action buttons.
+ *    - As soon as login succeeds, user is smoothly navigated back to their intended
+ *      previous page (e.g., `/my-events` or `/events/:id`) instead of a hardcoded `/`.
  */
 function Login() {
   const navigate = useNavigate();
@@ -29,6 +30,15 @@ function Login() {
 
   // If user navigated with state (e.g. from registration redirect), prefill email
   const initialEmail = location.state?.registeredEmail || '';
+
+  // Determine intended redirect destination from location.state
+  const fromLocation = location.state?.from;
+  const redirectPath =
+    typeof fromLocation === 'string'
+      ? fromLocation
+      : fromLocation?.pathname
+      ? `${fromLocation.pathname}${fromLocation.search || ''}${fromLocation.hash || ''}`
+      : '/';
 
   // ---------------------------------------------------------------------------
   // 1. STATE DEFINITIONS
@@ -54,15 +64,15 @@ function Login() {
   // ---------------------------------------------------------------------------
 
   /**
-   * Automatically redirects user to Home ('/') if authenticated.
+   * Automatically redirects user to intended destination (or Home '/') once authenticated.
    * Runs whenever `isAuthenticated` changes (e.g. upon successful login)
    * or if user enters /login while already logged in.
    */
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/');
+      navigate(redirectPath, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, redirectPath]);
 
   /**
    * Cleanup effect: Clears any lingering auth errors when component unmounts.
@@ -143,7 +153,7 @@ function Login() {
    * 3. Validates inputs locally.
    * 4. Dispatches `loginUser` action to Redux store.
    *    - If credentials match: Redux sets currentUser and isAuthenticated = true,
-   *      persisting to localStorage. The useEffect then redirects to '/'.
+   *      persisting to localStorage. The useEffect then redirects to intended redirectPath.
    *    - If credentials fail: Redux sets state.error ("Invalid email or password"),
    *      which is displayed in the alert banner.
    */
@@ -181,9 +191,19 @@ function Login() {
           <span className="auth-badge">Welcome Back</span>
           <h2 className="auth-title">Sign In</h2>
           <p className="auth-subtitle">
-            Enter your credentials to access your EventVerse account.
+            {fromLocation
+              ? 'Please sign in to access your requested page.'
+              : 'Enter your credentials to access your EventVerse account.'}
           </p>
         </div>
+
+        {/* Informational notice when redirected from a protected route */}
+        {fromLocation && !authError && (
+          <div className="alert alert-info" role="status">
+            <span className="alert-icon">🔒</span>
+            <span>Authentication required. You will be redirected after signing in.</span>
+          </div>
+        )}
 
         {/* Redux Authentication Error Banner (e.g. "Invalid email or password") */}
         {authError && (
@@ -266,7 +286,12 @@ function Login() {
         {/* Footer Navigation Link to Register */}
         <div className="auth-footer">
           Don't have an account?{' '}
-          <Link to="/register">Create an account</Link>
+          <Link
+            to="/register"
+            state={fromLocation ? { from: fromLocation } : undefined}
+          >
+            Create an account
+          </Link>
         </div>
       </div>
     </div>

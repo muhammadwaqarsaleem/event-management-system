@@ -5,6 +5,7 @@ import {
   cancelEventRegistration,
   clearRegistrationMessage,
 } from '../redux/registrationsSlice';
+import { DEFAULT_EVENT_PLACEHOLDER } from '../utils/imageHelper';
 
 /**
  * Parses an event's date string into a local Date timestamp at midnight (00:00:00).
@@ -110,7 +111,7 @@ const formatDisplayTime = (timeStr) => {
 /**
  * MyEvents Page Component
  * =============================================================================
- * Step 8: Add My Events Implementation
+ * Step 8: Add My Events Implementation (Protected by Step 9 Route Guards)
  *
  * Core Features:
  * -----------------------------------------------------------------------------
@@ -119,24 +120,26 @@ const formatDisplayTime = (timeStr) => {
  *      Redux `registrations` slice.
  *    - Strictly filters registrations by matching `reg.userEmail` to `currentUser.email`.
  *
- * 2. Dynamic Date Parsing & Categorization:
+ * 2. Deterministic Image Rendering:
+ *    - Directly renders `registration.eventImage` (persisted by `registrationsSlice`
+ *      via `getEventImage(event)`).
+ *    - Falls back to `DEFAULT_EVENT_PLACEHOLDER` on load error or if empty.
+ *
+ * 3. Dynamic Date Parsing & Categorization:
  *    - Parses `eventDate` against today's local date (`new Date().setHours(0,0,0,0)`).
  *    - Divides registrations into:
  *        * `upcomingEvents`: eventDate >= today
  *        * `pastEvents`: eventDate < today
  *
- * 3. Tabbed Navigation Layout:
+ * 4. Tabbed Navigation Layout:
  *    - Interactive tabs for "Upcoming Events (count)" and "Past Events (count)".
  *
- * 4. Interactive Event Cards:
+ * 5. Interactive Event Cards:
  *    - Banner thumbnail with fallback image handling.
  *    - Event title, venue, city, and localized date & time.
  *    - Upcoming Events: "View Details" link and "Cancel Registration" button
  *      dispatching `cancelEventRegistration`.
  *    - Past Events: Grayed-out "Completed" badge with disabled cancellation.
- *
- * 5. Robust Empty State Handling:
- *    - Informative card when category is empty with an "Explore Events" button.
  * =============================================================================
  */
 function MyEvents() {
@@ -242,16 +245,15 @@ function MyEvents() {
   };
 
   /**
-   * Image fallback handler to prevent broken image icons.
+   * Safe image fallback handler to prevent broken image icons.
    */
   const handleImageError = (e) => {
     e.target.onerror = null;
-    e.target.src =
-      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80';
+    e.target.src = DEFAULT_EVENT_PLACEHOLDER;
   };
 
   // ---------------------------------------------------------------------------
-  // 4. UNAUTHENTICATED STATE
+  // 4. UNAUTHENTICATED STATE FALLBACK (Safety Guard)
   // ---------------------------------------------------------------------------
   if (!isAuthenticated || !currentUser) {
     return (
@@ -398,6 +400,9 @@ function MyEvents() {
 
                 const isConfirmingCancel = cancellingEventId === event.eventId;
 
+                // Directly render stored eventImage with reliable fallback
+                const cardImage = event.eventImage || DEFAULT_EVENT_PLACEHOLDER;
+
                 return (
                   <article
                     key={event.registrationId || `${event.eventId}-${event.userEmail}`}
@@ -412,10 +417,7 @@ function MyEvents() {
                         aria-hidden="true"
                       >
                         <img
-                          src={
-                            event.eventImage ||
-                            'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80'
-                          }
+                          src={cardImage}
                           alt={event.eventTitle}
                           className="my-event-img"
                           loading="lazy"

@@ -1,4 +1,5 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { getEventImage } from '../utils/imageHelper';
 
 /**
  * Event Registrations Slice
@@ -14,13 +15,18 @@ import { createSlice } from '@reduxjs/toolkit';
  *      producing immutable state updates behind the scenes.
  *    - Automatically generates action creators with corresponding action types.
  *
- * 2. Persistent Storage (localStorage):
+ * 2. Deterministic Image Persistence (Step 9):
+ *    - Uses centralized `getEventImage(event)` so that registered items stored
+ *      in `localStorage` persist the exact same 16:9 banner image seen on
+ *      the event card and details views.
+ *
+ * 3. Persistent Storage (localStorage):
  *    - Key: `'event_registrations'`
  *    - Hydrated synchronously during slice definition so registrations survive
  *      browser page refreshes and tab reloads.
  *    - Synchronized whenever a user registers for or cancels an event.
  *
- * 3. Robust Error Handling:
+ * 4. Robust Error Handling:
  *    - Safe JSON parsing helper `getStoredRegistrations()` protects against
  *      corrupted JSON or restricted environments.
  * =============================================================================
@@ -87,7 +93,7 @@ export const registrationsSlice = createSlice({
         return;
       }
 
-      // Construct normalized registration record
+      // Construct normalized registration record with deterministic 16:9 image
       const newRegistration = {
         registrationId: Date.now().toString(),
         userEmail,
@@ -95,7 +101,7 @@ export const registrationsSlice = createSlice({
         eventTitle: event.name || 'Untitled Event',
         eventDate: event.dates?.start?.localDate || event.dateFormatted || 'TBA',
         eventTime: event.dates?.start?.localTime || event.timeFormatted || 'TBA',
-        eventImage: event.images?.[0]?.url || event.imageUrl || '',
+        eventImage: getEventImage(event),
         venueName:
           event._embedded?.venues?.[0]?.name ||
           event.venueName ||
