@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { formatEventData } from '../services/ticketmasterApi';
+import { getEventImage, DEFAULT_EVENT_PLACEHOLDER } from '../utils/imageHelper';
 
 /**
  * EventCard Component
@@ -7,7 +8,10 @@ import { formatEventData } from '../services/ticketmasterApi';
  * Renders an accessible, responsive event card for Ticketmaster events.
  * 
  * Features & Display Architecture:
- * 1. Image Media Section with aspect ratio 16:9, lazy loading, and error fallback.
+ * 1. Image Media Section using centralized deterministic `getEventImage(event)`:
+ *    - Strictly selects high-resolution 16:9 ratio assets.
+ *    - Guarantees 100% visual consistency between listing cards and event details.
+ *    - Lazy loaded with instant SVG fallback on error.
  * 2. Overlaid Badges:
  *    - Category Badge (e.g., "Music", "Sports", "Arts & Theatre")
  *    - Status Badge (e.g., "On Sale", "Rescheduled", "Cancelled")
@@ -34,7 +38,6 @@ function EventCard({ event }) {
   const {
     id,
     name,
-    imageUrl,
     dateFormatted,
     timeFormatted,
     venueName,
@@ -46,11 +49,13 @@ function EventCard({ event }) {
     status,
   } = item;
 
-  // Safe fallback if the Ticketmaster image URL errors out
+  // Deterministic 16:9 image URL using centralized helper
+  const eventImageUrl = getEventImage(event);
+
+  // Safe fallback if the image fails to load
   const handleImageError = (e) => {
     e.target.onerror = null;
-    e.target.src =
-      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80';
+    e.target.src = DEFAULT_EVENT_PLACEHOLDER;
   };
 
   // Build clean category/genre display string
@@ -66,7 +71,7 @@ function EventCard({ event }) {
       <div className="event-card-media">
         <Link to={`/events/${id}`} className="event-card-media-link" tabIndex={-1} aria-hidden="true">
           <img
-            src={imageUrl}
+            src={eventImageUrl}
             alt={name}
             className="event-card-img"
             loading="lazy"

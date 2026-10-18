@@ -10,6 +10,8 @@
  * -----------------------------------------------------------------------------
  */
 
+import { getEventImage } from '../utils/imageHelper';
+
 // Securely read the API key from Vite's environment variables (or process.env fallback)
 const API_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TICKETMASTER_API_KEY) ||
@@ -44,75 +46,15 @@ const ensureApiKey = () => {
  * @param {Array<Object>} [images=[]] - Ticketmaster event images array
  * @returns {string} Clean, high-resolution image URL
  */
-// Curated high-resolution fallback photography by category
-const FALLBACK_CATEGORY_IMAGES = {
-  music: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80',
-  sports: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=800&q=80',
-  'arts & theatre': 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=800&q=80',
-  theatre: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=800&q=80',
-  arts: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?auto=format&fit=crop&w=800&q=80',
-  film: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80',
-  miscellaneous: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80',
-  default: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
-};
-
 /**
- * Safely extract the highest-quality image from the Ticketmaster images array.
- * 
- * Ticketmaster provides multiple resolutions and aspect ratios (16_9, 3_2, 4_3).
- * Hierarchy:
- * 1. Prefer non-fallback '16_9' ratio with width >= 640px (optimal for hero & cards).
- * 2. Fallback to any '16_9' ratio image.
- * 3. Fallback to high-res '3_2' or '4_3' image.
- * 4. Fallback to largest width image available.
- * 5. Fallback to category-specific curated photography if no images exist.
+ * Safely extract the highest-quality image from the Ticketmaster images array
+ * via the centralized deterministic image helper.
  *
  * @param {Array<Object>} [images=[]] - Ticketmaster event images array
- * @param {string} [category=''] - Event classification category for tailored fallback
- * @returns {string} Clean, high-resolution image URL
+ * @returns {string} Clean, high-resolution 16:9 image URL
  */
-export const extractEventImage = (images = [], category = '') => {
-  const cleanCatKey = (category || '').toLowerCase().trim();
-  const defaultFallback =
-    FALLBACK_CATEGORY_IMAGES[cleanCatKey] || FALLBACK_CATEGORY_IMAGES.default;
-
-  if (!Array.isArray(images) || images.length === 0) {
-    return defaultFallback;
-  }
-
-  // Filter images that have valid string URLs
-  const validImages = images.filter(
-    (img) => img && typeof img.url === 'string' && img.url.startsWith('http')
-  );
-
-  if (validImages.length === 0) {
-    return defaultFallback;
-  }
-
-  // 1. Non-fallback 16:9 with width >= 640
-  const crisp169 = validImages.find(
-    (img) => img.ratio === '16_9' && !img.fallback && typeof img.width === 'number' && img.width >= 640
-  );
-  if (crisp169) return crisp169.url;
-
-  // 2. Any 16:9 image with width >= 640
-  const any169Large = validImages.find(
-    (img) => img.ratio === '16_9' && typeof img.width === 'number' && img.width >= 640
-  );
-  if (any169Large) return any169Large.url;
-
-  // 3. Any 16:9 image
-  const any169 = validImages.find((img) => img.ratio === '16_9');
-  if (any169) return any169.url;
-
-  // 4. Any high-resolution image (width >= 600)
-  const anyLarge = validImages.find(
-    (img) => typeof img.width === 'number' && img.width >= 600
-  );
-  if (anyLarge) return anyLarge.url;
-
-  // 5. First image available
-  return validImages[0].url;
+export const extractEventImage = (images = []) => {
+  return getEventImage(images);
 };
 
 /**
@@ -321,8 +263,8 @@ export const formatEventData = (event = {}) => {
   // 1. Classification & Category
   const { category, genre, subGenre } = extractClassification(event);
 
-  // 2. Image (tailored with category-based smart fallback)
-  const imageUrl = extractEventImage(event.images, category);
+  // 2. Image (deterministic 16:9 selection via centralized helper)
+  const imageUrl = getEventImage(event);
 
   // 3. Date and Time
   const isTimeTBA = Boolean(event.dates?.timeTBA);

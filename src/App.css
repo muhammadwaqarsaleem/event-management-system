@@ -245,6 +245,12 @@
   color: #991b1b;
 }
 
+.alert-info {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+}
+
 .alert-icon {
   font-weight: bold;
   font-size: 1.1rem;
@@ -1211,12 +1217,32 @@
   border-color: rgba(99, 102, 241, 0.3);
 }
 
-/* Media Section */
+/* Image Skeleton Shimmer Keyframes */
+@keyframes imageSkeletonShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Media Section with Skeleton Shimmer to Prevent CLS */
 .event-card-media {
   position: relative;
   width: 100%;
-  height: 200px;
-  background-color: #f1f5f9;
+  aspect-ratio: 16 / 9;
+  min-height: 190px;
+  background: linear-gradient(
+    90deg,
+    #0f172a 0%,
+    #1e293b 25%,
+    #334155 50%,
+    #1e293b 75%,
+    #0f172a 100%
+  );
+  background-size: 200% 100%;
+  animation: imageSkeletonShimmer 2.2s infinite ease-in-out;
   overflow: hidden;
 }
 
@@ -1224,7 +1250,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.4s ease;
+  transition: opacity 0.35s ease, transform 0.4s ease;
   display: block;
 }
 
@@ -1645,12 +1671,21 @@
   box-shadow: var(--shadow-card);
 }
 
-/* Banner Image Wrapper */
+/* Banner Image Wrapper with Skeleton Shimmer */
 .details-banner-wrapper {
   position: relative;
   width: 100%;
   height: 420px;
-  background-color: #0f172a;
+  background: linear-gradient(
+    90deg,
+    #0f172a 0%,
+    #1e293b 25%,
+    #334155 50%,
+    #1e293b 75%,
+    #0f172a 100%
+  );
+  background-size: 200% 100%;
+  animation: imageSkeletonShimmer 2.2s infinite ease-in-out;
   overflow: hidden;
 }
 
@@ -1659,6 +1694,7 @@
   height: 100%;
   object-fit: cover;
   object-position: center;
+  transition: opacity 0.35s ease;
   display: block;
 }
 
@@ -2595,11 +2631,22 @@
   border-color: var(--color-border);
 }
 
-/* Card Media */
+/* Card Media with Skeleton Shimmer */
 .my-event-media {
   position: relative;
-  height: 180px;
-  background-color: #0f172a;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 180px;
+  background: linear-gradient(
+    90deg,
+    #0f172a 0%,
+    #1e293b 25%,
+    #334155 50%,
+    #1e293b 75%,
+    #0f172a 100%
+  );
+  background-size: 200% 100%;
+  animation: imageSkeletonShimmer 2.2s infinite ease-in-out;
   overflow: hidden;
 }
 
@@ -2613,7 +2660,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.35s ease;
+  transition: opacity 0.35s ease, transform 0.35s ease;
 }
 
 .my-event-card:hover .my-event-img {
