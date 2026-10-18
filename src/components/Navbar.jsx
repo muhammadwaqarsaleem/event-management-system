@@ -1,33 +1,77 @@
-import { NavLink, Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { logoutUser } from '../redux/authSlice';
 
 /**
  * Navbar Component
  * -----------------------------------------------------------------------------
- * Demonstrates:
+ * Responsive Navigation Bar featuring:
  * 1. Redux State Access with `useSelector`:
  *    - Reads `isAuthenticated` and `currentUser` from Redux auth slice state.
+ *    - Reads `registrations` to compute active upcoming registration count badge.
  * 2. Redux Action Dispatching with `useDispatch`:
  *    - Dispatches `logoutUser` to clear session state in Redux and delete
  *      `currentUser` from `localStorage`.
- * 3. Conditional Rendering based on Authentication State:
+ * 3. Mobile Hamburger Menu Toggle (Screens < 768px):
+ *    - Responsive hamburger icon with smooth animated transition to an 'X' icon.
+ *    - Toggles mobile navigation overlay/dropdown containing all navigation items.
+ *    - Automatically closes when any navigation link is clicked or route changes.
+ *    - Closes on backdrop click or when the Escape key is pressed.
+ * 4. Conditional Rendering based on Authentication State:
  *    - When authenticated:
- *        * Renders a personalized greeting ("Hi, [Name]").
- *        * Renders a "Logout" button.
+ *        * Shows personalized greeting ("Hi, [Name]").
+ *        * Shows "My Events" link with upcoming active registration badge count.
+ *        * Shows "Logout" action button.
  *        * Hides "Login" and "Register" links.
  *    - When unauthenticated:
- *        * Renders "Login" and "Register" navigation links.
- *        * Hides the Logout button and user greeting.
- * 4. Client-side navigation using React Router v6 `<NavLink>` and `<Link>`.
+ *        * Shows "Login" and "Register" navigation links.
+ *        * Hides Logout button, My Events, and user greeting.
+ * 5. Accessible semantics (`aria-expanded`, `aria-controls`, `aria-label`).
  */
 function Navbar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // State to toggle mobile hamburger menu
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Extract auth and registration slice states from the Redux store
   const { isAuthenticated, currentUser } = useSelector((state) => state.auth);
   const { registrations = [] } = useSelector((state) => state.registrations);
+
+  // React 19 recommendation: adjust state during render instead of in useEffect
+  const [prevPathname, setPrevPathname] = useState(location.pathname);
+  if (prevPathname !== location.pathname) {
+    setPrevPathname(location.pathname);
+    setIsMobileMenuOpen(false);
+  }
+
+  /**
+   * Accessibility: Close mobile menu when the Escape key is pressed
+   */
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && isMobileMenuOpen) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileMenuOpen]);
+
+  /**
+   * Helper callbacks to manage mobile menu state
+   */
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen((prev) => !prev);
+  };
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+  };
 
   /**
    * Calculates the user's active upcoming event registrations:
@@ -58,10 +102,12 @@ function Navbar() {
 
   /**
    * Handles user logout:
-   * 1. Dispatches `logoutUser()` which removes currentUser from Redux state and localStorage.
-   * 2. Programmatically redirects the user to the login page ('/login') for optimal UX.
+   * 1. Closes mobile drawer if open.
+   * 2. Dispatches `logoutUser()` which clears currentUser from Redux state and localStorage.
+   * 3. Programmatically redirects the user to the login page ('/login').
    */
   const handleLogout = () => {
+    closeMobileMenu();
     dispatch(logoutUser());
     navigate('/login');
   };
@@ -70,7 +116,7 @@ function Navbar() {
     <header className="navbar">
       <div className="navbar-container">
         {/* Brand Logo / Title */}
-        <Link to="/" className="navbar-brand">
+        <Link to="/" className="navbar-brand" onClick={closeMobileMenu}>
           <span className="brand-icon" role="img" aria-label="EventVerse Logo">
             📅
           </span>
@@ -79,14 +125,33 @@ function Navbar() {
           </span>
         </Link>
 
-        {/* Navigation Links & Auth Controls */}
-        <nav aria-label="Primary Navigation">
+        {/* Mobile Hamburger Menu Toggle Button (Visible on screens < 768px) */}
+        <button
+          type="button"
+          className={`navbar-hamburger ${isMobileMenuOpen ? 'open' : ''}`}
+          onClick={toggleMobileMenu}
+          aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          aria-expanded={isMobileMenuOpen}
+          aria-controls="primary-navigation"
+        >
+          <span className="hamburger-line" aria-hidden="true" />
+          <span className="hamburger-line" aria-hidden="true" />
+          <span className="hamburger-line" aria-hidden="true" />
+        </button>
+
+        {/* Navigation Links & Auth Controls (Desktop row & Mobile dropdown) */}
+        <nav
+          id="primary-navigation"
+          aria-label="Primary Navigation"
+          className={`navbar-nav ${isMobileMenuOpen ? 'nav-open' : ''}`}
+        >
           <ul className="navbar-links">
             {/* Always visible: Home link */}
             <li>
               <NavLink
                 to="/"
                 end
+                onClick={closeMobileMenu}
                 className={({ isActive }) =>
                   isActive ? 'nav-link active' : 'nav-link'
                 }
@@ -108,6 +173,7 @@ function Navbar() {
                 <li>
                   <NavLink
                     to="/my-events"
+                    onClick={closeMobileMenu}
                     className={({ isActive }) =>
                       isActive
                         ? 'nav-link nav-link-my-events active'
@@ -156,6 +222,7 @@ function Navbar() {
                 <li>
                   <NavLink
                     to="/login"
+                    onClick={closeMobileMenu}
                     className={({ isActive }) =>
                       isActive ? 'nav-link active' : 'nav-link'
                     }
@@ -167,6 +234,7 @@ function Navbar() {
                 <li>
                   <NavLink
                     to="/register"
+                    onClick={closeMobileMenu}
                     className={({ isActive }) =>
                       isActive
                         ? 'nav-link nav-link-cta active'
@@ -181,6 +249,15 @@ function Navbar() {
           </ul>
         </nav>
       </div>
+
+      {/* Backdrop overlay for mobile menu */}
+      {isMobileMenuOpen && (
+        <div
+          className="navbar-backdrop"
+          onClick={closeMobileMenu}
+          aria-hidden="true"
+        />
+      )}
     </header>
   );
 }
